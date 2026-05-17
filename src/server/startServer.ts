@@ -3,6 +3,7 @@ import { NodeContext } from "@effect/platform-node";
 import { createAdaptorServer } from "@hono/node-server";
 import { serveStatic } from "@hono/node-server/serve-static";
 import { Effect, Layer } from "effect";
+import { Hono } from "hono";
 import { AgentSessionLayer } from "./core/agent-session/index.ts";
 import { AgentSessionController } from "./core/agent-session/presentation/AgentSessionController.ts";
 import { SessionAllowlistRepository } from "./core/claude-code/infrastructure/SessionAllowlistRepository.ts";
@@ -94,8 +95,20 @@ export const startServer = async (options: CliOptions) => {
     });
   }
 
+  // Sub-path deployment support (CCV_BASE / --base)
+  const basePath = options.base ?? undefined;
+  const normalizedBase = basePath ? basePath.replace(/\/$/, "").replace(/^(.+)/, "/$1") : "";
+
+  let servingApp = honoApp;
+  if (normalizedBase) {
+    await runWithLogger(Effect.logInfo(`Using base path: ${normalizedBase}`));
+    const parentApp = new Hono();
+    parentApp.route(normalizedBase, honoApp);
+    servingApp = parentApp;
+  }
+
   const server = createAdaptorServer({
-    fetch: honoApp.fetch,
+    fetch: servingApp.fetch,
   });
 
   const program = Effect.gen(function* () {
